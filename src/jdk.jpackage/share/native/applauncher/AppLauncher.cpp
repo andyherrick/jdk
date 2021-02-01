@@ -31,6 +31,7 @@
 #include "Dll.h"
 #include "Toolbox.h"
 #include "SysInfo.h"
+#include "ReleaseFile.h"
 #include "FileUtils.h"
 
 
@@ -56,7 +57,38 @@ private:
     const tstring& runtimePath;
 };
 
+/**
+ * Returns path to a java runtime conforming to the giver release file.
+ * after adding that runtime path to given user application config file.
+ */
+tstring findRuntime(const tstring& releasePath, const tstring& configPath) {
+    tstring runtimePath;
+
+    ReleaseFile required;
+    required = ReleaseFile::load(releasePath);
+
+    const tstring pf = SysInfo::getEnvVariable(std::nothrow, _T("PROGRAMFILES"));
+    const tstring root1 = FileUtils::mkpath() << pf << _T("/Java");
+
+    tstring_array& candidates = FileUtils::listContents(root1, _T("release"));
+
+    for (int i=0; i< candidates.size(); i++) {
+        ReleaseFile candidate = ReleaseFile::load(candidates[i]);
+        if (candidate.satisfies(required)) {
+            runtimePath = FileUtils::dirname(candidates[i]); {
+                const tstring_array lines = { _T("[Application]"), (tstrings::any()
+                        << _T("app.runtime=") << runtimePath).tstr() };
+                FileUtils::writeTextFile(configPath, lines);
+            }
+        } else {
+            LOG_TRACE(tstrings::any() << "not satisfing: " << candidates[i]);
+        }
+    }
+    return runtimePath;
+}
+
 tstring findJvmLib(const CfgFile& cfgFile, const CfgFile& userCfg,
+        const tstring& userCfgPath,
         const tstring& defaultRuntimePath, const tstring_array& jvmLibNames) {
     const CfgFile::Properties& appOptions = cfgFile.getProperties(
             SectionName::Application);
@@ -65,6 +97,7 @@ tstring findJvmLib(const CfgFile& cfgFile, const CfgFile& userCfg,
 
     const CfgFile::Properties::const_iterator runtimePathProp = appOptions.find(
             PropertyName::runtime);
+
     tstring runtimePath;
     if (runtimePathProp != appOptions.end()) {
         // not usually used anymore where the runtime is given in main cfg file
@@ -85,28 +118,38 @@ tstring findJvmLib(const CfgFile& cfgFile, const CfgFile& userCfg,
                 << "\" section of launcher config file."
                 << " Using Java runtime from \""
                 << runtimePath << "\" directory");
-    } else if (FileUtils::isFileExists(
-            FileUtils::mkpath() << defaultRuntimePath << _T("/release"))) {
-        // no runtime included in package, but there is a release file
-        const CfgFile::Properties::const_iterator userRuntimeProp =
-                userAppOptions.find(PropertyName::runtime);
-        if (userRuntimeProp != userAppOptions.end()) {
-            runtimePath = CfgFile::asString(*userRuntimeProp);
-            LOG_TRACE(tstrings::any()
-                    << "Property \"" << PropertyName::runtime.name()
-                    << "\" found in \"" << SectionName::Application.name()
-                    << "\" section of user specific launcher config file."
-                    << " Using Java runtime from \""
-                    << runtimePath << "\" directory");
+    } else {
+        tstring releaseFile =
+                 FileUtils::mkpath() << defaultRuntimePath << _T("/release");
+
+        if (FileUtils::isFileExists(releaseFile)) {
+            // no runtime included in package, but there is a release file
+            // so check if already in user application config file
+            const CfgFile::Properties::const_iterator userRuntimeProp =
+                    userAppOptions.find(PropertyName::runtime);
+            if (userRuntimeProp != userAppOptions.end()) {
+                runtimePath = CfgFile::asString(*userRuntimeProp);
+                LOG_TRACE(tstrings::any()
+                        << "Property \"" << PropertyName::runtime.name()
+                        << "\" found in \"" << SectionName::Application.name()
+                        << "\" section of user specific launcher config file."
+                        << " Using Java runtime from \""
+                        << runtimePath << "\" directory");
+            } else {
+                runtimePath = findRuntime(releaseFile, userCfgPath);
+                if (!FileUtils::isFileExists(runtimePath)) {
+                    JP_THROW(tstrings::any() << "No runtime in app image. "
+                            << "Cannot find runtime matching " << releaseFile);
+                }
+                LOG_TRACE(tstrings::any()
+                        << "Searching for runtime image matching: "
+                        << releaseFile << " found matching runtime in: "
+                        << runtimePath);
+            }
         } else {
             JP_THROW(tstrings::any() << "No runtime in applicvastion image, "
-                    << "No runtime in User level config file. "
-                    << "Need to search for runtime matching: \""
-                    << defaultRuntimePath << _T("/release") << "\"");
-        }
-    } else {
-        JP_THROW(tstrings::any() << "No runtime in applicvastion image, "
                     << "and no release file given");
+        }
     }
 
     const tstring_array::const_iterator jvmLibNameEntry = std::find_if(
@@ -130,11 +173,7 @@ Jvm* AppLauncher::createJvmLauncher() const {
         << FileUtils::basename(FileUtils::replaceSuffix(
                 launcherPath, _T(".cfg")));
 
-    LOG_TRACE(tstrings::any() << "Launcher config file path: \""
-            << cfgFilePath << "\"");
-
-    const tstring appDataPath = SysInfo::getEnvVariable(
-            std::nothrow, _T("APPDATA"));
+    const tstring appDataPath = SysInfo::getAppDataPath();
 
     const tstring userCfgPath = FileUtils::mkpath()
         << appDataPath
@@ -142,8 +181,6 @@ Jvm* AppLauncher::createJvmLauncher() const {
                 launcherPath, _T("")))
         << FileUtils::basename(FileUtils::replaceSuffix(
                 launcherPath, _T(".cfg")));
-
-    LOG_TRACE(tstrings::any() << "Urer config file path: " << userCfgPath);
 
     CfgFile::Macros macros;
     macros[_T("$APPDIR")] = appDirPath;
@@ -167,7 +204,8 @@ Jvm* AppLauncher::createJvmLauncher() const {
     std::unique_ptr<Jvm> jvm(new Jvm());
 
     (*jvm)
-        .setPath(findJvmLib(cfgFile, userCfg, defaultRuntimePath, jvmLibNames))
+        .setPath(findJvmLib(cfgFile, userCfg, userCfgPath,
+                defaultRuntimePath, jvmLibNames))
         .addArgument(launcherPath);
 
     if (initJvmFromCmdlineOnly) {

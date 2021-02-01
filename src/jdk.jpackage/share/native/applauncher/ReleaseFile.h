@@ -24,50 +24,52 @@
  */
 
 
-#include <limits.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include "FileUtils.h"
-#include "ErrorHandling.h"
+#ifndef ReleaseFile_h
+#define ReleaseFile_h
+
+#include <map>
+#include "tstrings.h"
 
 
-namespace FileUtils {
-
-bool isFileExists(const tstring &filePath) {
-    struct stat statBuffer;
-    return (stat(filePath.c_str(), &statBuffer) != -1);
-}
-
-
-tstring toAbsolutePath(const tstring& path) {
-    if (path.empty()) {
-        char buffer[PATH_MAX] = { 0 };
-        char* buf = getcwd(buffer, sizeof(buffer));
-        if (buf) {
-            tstring result(buf);
-            if (result.empty()) {
-                JP_THROW(tstrings::any() << "getcwd() returned empty string");
-            }
-            return result;
+class ReleaseFile {
+public:
+    template <class Tag> class Id {
+    public:
+        Id(const tstring::const_pointer str) : str(str) {
         }
 
-        JP_THROW(tstrings::any() << "getcwd() failed. Error: "
-                << lastCRTError());
-    }
+        bool operator == (const Id& other) const {
+            return tstring(str) == tstring(other.str);
+        }
 
-    if (isDirSeparator(path[0])) {
-        return path;
-    }
+        bool operator != (const Id& other) const {
+            return !operator == (other);
+        }
 
-    return mkpath() << toAbsolutePath("") << path;
-}
+        bool operator < (const Id& other) const {
+            return tstring(str) < tstring(other.str);
+        }
 
-tstring_array listContents(const tstring& basedir, const tstring& filename) {
-    return tstring_array();
-}
+        tstring name() const {
+            return tstring(str);
+        }
 
-bool writeTextFile(const tstring& path, const tstring_array lines) {
-    return false;
-}
+    private:
+        tstring::const_pointer str;
+    };
 
-} //  namespace FileUtils
+    tstring& getVersion();
+
+    tstring_array& getModules();
+
+    bool satisfies(ReleaseFile other);
+
+    static ReleaseFile load(const tstring& path);
+
+private:
+    tstring version;
+    tstring_array modules;
+};
+
+
+#endif // ReleaseFile_h
