@@ -79,14 +79,14 @@ bool ReleaseFile::satisfies(ReleaseFile required) {
         tstring_array reqmods = required.modules;
         tstring_array canmods = modules;
         
-        for (int i=0; i<reqmods.size(); i++) {
+        for (int i=0; i<(int)reqmods.size(); i++) {
             int j = 0;
-            for (; j<canmods.size(); j++) {
+            for (; j<(int)canmods.size(); j++) {
                 if (tstrings::equals(reqmods[i], canmods[j])) {
                     break;
                 }
             }
-            if (j == canmods.size()) {
+            if (j == (int)canmods.size()) {
                 LOG_TRACE(tstrings::any() << " missing mod: " << reqmods[i]);
                 return false;
             }

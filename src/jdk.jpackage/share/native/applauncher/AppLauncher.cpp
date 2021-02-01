@@ -67,21 +67,27 @@ tstring findRuntime(const tstring& releasePath, const tstring& configPath) {
     ReleaseFile required;
     required = ReleaseFile::load(releasePath);
 
-    const tstring pf = SysInfo::getEnvVariable(std::nothrow, _T("PROGRAMFILES"));
-    const tstring root1 = FileUtils::mkpath() << pf << _T("/Java");
-
-    tstring_array& candidates = FileUtils::listContents(root1, _T("release"));
-
-    for (int i=0; i< candidates.size(); i++) {
-        ReleaseFile candidate = ReleaseFile::load(candidates[i]);
-        if (candidate.satisfies(required)) {
-            runtimePath = FileUtils::dirname(candidates[i]); {
-                const tstring_array lines = { _T("[Application]"), (tstrings::any()
-                        << _T("app.runtime=") << runtimePath).tstr() };
-                FileUtils::writeTextFile(configPath, lines);
+    const tstring_array places = SysInfo::getJavaSearchPaths();
+    tstring_array::const_iterator it_places = places.begin();
+    for(; it_places != places.end(); ++it_places) {
+        tstring place = *it_places;
+LOG_TRACE(tstrings::any() << "looking in " << place);
+        tstring_array candidates = FileUtils::listContents(place, _T("release"));
+        tstring_array::const_iterator it_candidate = candidates.begin();
+        for(; it_candidate != candidates.end(); ++it_candidate) {
+            tstring path = *it_candidate;
+LOG_TRACE(tstrings::any() << "looking at " << path);
+            ReleaseFile candidate = ReleaseFile::load(path);
+            if (candidate.satisfies(required)) {
+                runtimePath = FileUtils::dirname(path); {
+                    const tstring_array lines = { _T("[Application]"),
+                            (tstrings::any() << _T("app.runtime=")
+                            << runtimePath).tstr() };
+                    FileUtils::writeTextFile(configPath, lines);
+                }
+            } else {
+                LOG_TRACE(tstrings::any() << "not satisfing: " << path);
             }
-        } else {
-            LOG_TRACE(tstrings::any() << "not satisfing: " << candidates[i]);
         }
     }
     return runtimePath;

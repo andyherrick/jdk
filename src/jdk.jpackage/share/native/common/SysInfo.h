@@ -90,7 +90,7 @@ namespace SysInfo {
 
     tstring getAppDataPath();
 
-    tstring_array getJavaSerchPaths();
+    tstring_array getJavaSearchPaths();
 
 }
 

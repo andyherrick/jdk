@@ -63,7 +63,8 @@ tstring toAbsolutePath(const tstring& path) {
 }
 
 tstring_array listContents(const tstring& basedir, const tstring& filename) {
-    return tstring_array();
+    tstring_array reply;
+    return reply;
 }
 
 bool writeTextFile(const tstring& path, const tstring_array lines) {
